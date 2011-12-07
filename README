@@ -1,0 +1,7 @@
+Market Place Download Protocol
+==============================
+
+This repository contains the following files:
+
+ - server.py: an example MPDP server
+ - test.py: a MPDP test client
