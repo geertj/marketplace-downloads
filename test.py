@@ -16,7 +16,7 @@ import httplib as http
 
 from sys import stdout, stderr
 from httplib import HTTPConnection, HTTPSConnection
-from urllib import urlencode
+from urllib import urlencode, quote
 from urlparse import urlsplit
 from optparse import OptionParser
 
@@ -52,15 +52,21 @@ def get_example_data(fields):
         data[key] = example_data[key]
     return data
 
-def add_signature(fields, secret, expiry=1800):
+def add_signature(url, fields, secret, expiry=1800):
     """Add a signature and expiration to a field set."""
+    parsed = urlsplit(url)
     fields['expires'] = str(int(time.time()) + expiry)
-    lines = ['%s=%s\n' % (key, fields[key].encode('utf-8')) for key in fields]
-    lines.sort()
-    s = ''.join(lines)
-    h = hmac.new(secret, s, hashlib.sha1)
-    sig = h.digest().encode('base64')
-    sig = sig.replace('\n', '').replace(' ', '')
+    s = 'POST\n'
+    s += '%s\n' % parsed.netloc.lower()
+    s += '%s\n' % (parsed.path or '/')
+    qs = []
+    for key in fields:
+        value = quote(fields[key].encode('utf-8'), safe='~')
+        qs.append('%s=%s' % (key, value))
+    qs = '&'.join(sorted(qs))
+    s += qs
+    h = hmac.new(secret, s, hashlib.sha256)
+    sig = h.digest().encode('base64').replace('\n', '').replace(' ', '')
     fields['signature'] = sig
 
 def encode_fields(fields, charset=None):
@@ -117,7 +123,7 @@ def test_download(url, filename, secret, download=False):
     """Try a download that should succeed."""
     fields = get_example_data(required_fields)
     fields['file'] = filename
-    add_signature(fields, secret)
+    add_signature(url, fields, secret)
     stdout.write('Making an authenticated download request ... ')
     r = make_request(url, fields)
     stdout.write('DONE\n')

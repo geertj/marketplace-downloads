@@ -16,6 +16,7 @@ import os.path
 import hashlib
 import logging
 import optparse
+import urllib
 import urlparse
 import httplib as http
 
@@ -75,12 +76,27 @@ class DownloadApp(WSGIApp):
         self.secret = secret
         self.logger = logging.getLogger('DownloadApp')
 
-    def check_signature(self, fields):
-        s = ''.join(['%s=%s\n' % (f, fields[f]) for f in sorted(fields)
-                     if f != 'signature'])
-        h = hmac.new(self.secret, s, hashlib.sha1)
-        sig1 = h.digest().encode('base64')
-        sig1 = sig1.replace(' ', '').replace('\n', '')
+    def check_signature(self, environ, fields):
+        s = '%s\n' % environ['REQUEST_METHOD']
+        host = environ.get('HTTP_HOST')
+        if not host:
+            host = environ.get('SERVER_NAME')
+        s += '%s\n' % host.lower()
+        url = environ.get('SCRIPT_NAME', '')
+        url += environ.get('PATH_INFO', '')
+        if url == '':
+            url = '/'
+        s += '%s\n' % url
+        qs = []
+        for key in fields:
+            if key == 'signature':
+                continue
+            value = urllib.quote(fields[key].encode('utf8'), safe='~')
+            qs.append('%s=%s' % (key, value))
+        qs = '&'.join(sorted(qs))
+        s += qs
+        h = hmac.new(self.secret, s, hashlib.sha256)
+        sig1 = h.digest().encode('base64').replace(' ', '').replace('\n', '')
         sig2 = fields['signature'].replace(' ', '').replace('\n', '')
         if sig1 != sig2:
             self.logger.debug('signature mismatch')
@@ -115,6 +131,7 @@ class DownloadApp(WSGIApp):
             return self.simple_response(http.LENGTH_REQUIRED)
         clen = int(clen)
         body = self.environ['wsgi.input'].read(clen)
+        self.logger.debug('POST body:\n%s' % body)
         fields = urlparse.parse_qs(body)
         for key in fields:
             self.logger.debug('field %s = %s' % (key, fields[key][0]))
@@ -130,15 +147,19 @@ class DownloadApp(WSGIApp):
             if len(fields[f]) != 1:
                 self.logger.error('multiple values provided for: %s' % f)
                 return self.simple_response(http.BAD_REQUEST)
-        fields = dict(((f, fields[f][0]) for f in fields))
+        fields = dict(((f, fields[f][0].decode('utf8')) for f in fields))
         # We accept any eula, but if one is provided, it has to be accepted.
         if fields.get('eula') and not \
                 fields.get('eula_accepted', 'false') == 'true':
             self.logger.error('EULA not accepted')
             return self.simple_response(http.FORBIDDEN)
-        if self.check and not self.check_signature(fields):
-            self.logger.error('Signature mismatch')
-            return self.simple_response(http.FORBIDDEN)
+        if self.check:
+            if not fields.has_key('signature'):
+                self.logger.error('No signature provided')
+                return self.simple_response(http.FORBIDDEN)
+            if not self.check_signature(environ, fields):
+                self.logger.error('Signature mismatch')
+                return self.simple_response(http.FORBIDDEN)
         # Serve any file from the indicated directory
         fname = os.path.join(self.directory, fields['file'])
         try:
