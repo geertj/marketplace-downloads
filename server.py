@@ -45,8 +45,10 @@ class WSGIApp(object):
 
     def serve_file(self, fname, size=None):
         fin = file(fname)
+        basename = os.path.split(fname)[1].encode('ascii')
         headers = []
         headers.append(('Content-Type', 'application/octet-stream'))
+        headers.append(('Content-Disposition', 'attachment; filename=%s' % basename))
         if size is None:
             fin.seek(0, 2); size = fin.tell(); fin.seek(0)
         headers.append(('Content-Length', str(size)))
