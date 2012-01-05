@@ -5,7 +5,7 @@
 # This file is provided under the MIT license, see the file LICENSE for the
 # exact licensing terms.
 #
-# Copyright (c) 2011, Red Hat Inc.
+# Copyright (c) 2011-2012, Red Hat Inc.
 
 import sys
 import hmac
@@ -96,6 +96,22 @@ def open_connection(url):
     conn = cls(host, port)
     return conn
 
+def get_redirected_url(url, method='GET'):
+    parsed = urlsplit(url)
+    conn = open_connection(url)
+    headers = {}
+    body = ''
+    headers['Content-Length'] = str(len(body))
+    headers['Accept'] = 'application/octet-stream'
+    logging.debug('request: method = %s, url = %s'
+                  % (method, url))
+    conn.request(method, url, headers=headers, body=body)
+    resp = conn.getresponse()
+    logging.debug('response: status = %s, body = %s bytes, Content-Type = %s'
+                  % (resp.status, resp.getheader('Content-Length', 'N/A'),
+                     resp.getheader('Content-Type', 'N/A')))
+    return resp
+
 def make_request(url, fields, method='POST', charset='utf-8'):
     """Make a HTTP request and return the HTTPResponse object."""
     parsed = urlsplit(url)
@@ -127,6 +143,11 @@ def test_download(url, filename, secret, download=False):
     stdout.write('Making an authenticated download request ... ')
     r = make_request(url, fields)
     stdout.write('DONE\n')
+    if r.status == 303:
+      stdout.write('  - Redirected (303) to Location = %s\n' % r.getheader('Location'))
+      stdout.write('  - Trying this URL via HTTP GET ... ')
+      r = get_redirected_url(r.getheader('Location'))
+      stdout.write('DONE\n')
     stdout.write('Examining response ...\n')
     errors = 0
     if r.status == http.OK:
