@@ -65,8 +65,11 @@ def add_signature(url, fields, secret, expiry=1800):
         qs.append('%s=%s' % (key, value))
     qs = '&'.join(sorted(qs))
     s += qs
+    logging.debug('StringToSign: %s' % repr(s))
+    logging.debug('Secret: %s' % secret)
     h = hmac.new(secret, s, hashlib.sha256)
     sig = h.digest().encode('base64').replace('\n', '').replace(' ', '')
+    logging.debug('Signature = BASE64(HMAC-SHA256(Secret, StringToSign)): %s' % sig)
     fields['signature'] = sig
 
 def encode_fields(fields, charset=None):
